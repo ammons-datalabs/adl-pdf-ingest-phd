@@ -1,0 +1,30 @@
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Kim et al. 2020 - An Efficient Database Backup and Recovery Scheme using Write-Ahead Logging(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Mohana Chelvan and Perumal 2017 - A comparative analysis of feature selection stability measures.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Zhen Sun et al. 2014 - DS-Dedupe - A scalable, low network overhead data routing algorithm for inline cluster deduplication system.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Zuo et al. 2019 - RepEC-Duet - Ensure High Reliability and Performance for Deduplicated and Delta-Compressed Storage Systems.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Nayak and Patgiri 2019 - Dr. Hadoop - In search of a needle in a haystack.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Blasco et al. 2014 - A tunable proof of ownership scheme for deduplication using Bloom filters(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Won et al. 2008 - PRUN - Eliminating Information Redundancy for Large Scale Data Backup System.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Armknecht et al. 2017 - Side Channels in Deduplication(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Zhou et al. 2022 - UltraCDC - A Fast and Stable Content-Defined Chunking Algorithm for Deduplication-based Backup Storage Systems.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Thwel and Thein 2009 - An Efficient Indexing Mechanism for Data Deduplication.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Koushik et al. 2020 - Study of data deduplication for file chunking approaches(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Youn et al. 2019 - Authorized Client-Side Deduplication Using CP-ABE in Cloud Storage(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Jain et al. 2005 - Taper - Tiered approach for eliminating redundancy in replica synchronization(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Bellare and Rogaway 2006 - The Security of Triple Encryption and a Framework for Code-Based Game-Playing Proofs.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Dubnicki et al. 2009 - HYDRAstor-A-Scalable-Secondary-Storage-1.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Koo and Hur 2018 - Privacy-preserving deduplication of encrypted data with dynamic ownership management in fog computing(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Wang et al. 2019 - A key-sharing based secure deduplication scheme in cloud storage.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Zhou et al. 2015 - SecDep - A user-aware efficient fine-grained secure deduplication scheme with multi-level key management.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Tan and Yan 2017 - Multi-Objective Metrics to Evaluate Deduplication Approaches(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Freedman et al. 2005 - Keyword Search and Oblivious Pseudorandom Functions(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/DeepSeek-AI et al. 2024 - DeepSeek-V3 Technical Report.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/DEDISbench - A Benchmark for Deduplica... - DEDISbench - A Benchmark for Deduplicated Storage Systems.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Wu 2019 - Towards integrating learning algorithms into computer system design.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/[MS-RDC].pdf - [MS-RDC].pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/You et al. 2011 - PRESIDIO - A Framework for Efficient Archival Data Storage.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Tang et al. 2025 - AutoAgent - A Fully-Automated and zero-code framework for LLM agents.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Wu 2019 - Towards integrating learning algorithms into computer system design(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Data Structures and Algorithms - Table... - Data Structures and Algorithms - Table of Contents.pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/Data Structures and Algorithms - Table... - Data Structures and Algorithms - Table of Contents(1).pdf
+/Users/jaybea/Documents/Projects/ADL/pdf-ingest-phd/all_papers_raw/DEDISbench - A Benchmark for Deduplica... - DEDISbench - A Benchmark for Deduplicated Storage Systems(1).pdf

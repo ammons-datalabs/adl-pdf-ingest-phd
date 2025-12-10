@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.idea
+data/pdf_corpus_dev/*
+all_papers_raw/
+*.egg-info
+.eggs
+dist/
+build/
+.env
