@@ -74,6 +74,12 @@ def main() -> None:
         help="Path to manifest CSV (for paperpile-sync)",
     )
 
+    # queue-metadata
+    subparsers.add_parser(
+        "queue-metadata",
+        help="Queue all documents for metadata sync (PAPERPILE_METADATA)",
+    )
+
     # sync-es
     sync_parser = subparsers.add_parser(
         "sync-es",
@@ -163,23 +169,31 @@ def main() -> None:
             print(f"Queued {queued} documents for extraction.")
 
     elif args.command == "run-robot":
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
         if args.robot == "pdf-extractor":
             from .robots.pdf_extractor import run_loop
             run_loop(max_iterations=args.max_iterations)
         elif args.robot == "paperpile-sync":
-            from .robots.paperpile_sync import sync_manifest
-            import logging
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s %(levelname)s %(name)s %(message)s",
-            )
+            from .robots.paperpile_sync import run_loop as paperpile_run_loop
             init_db()
             manifest_path = Path(args.manifest).resolve()
             if not manifest_path.exists():
                 print(f"Error: Manifest not found: {manifest_path}")
                 return
-            updated = sync_manifest(manifest_path)
-            print(f"Synced metadata for {updated} documents.")
+            paperpile_run_loop(manifest_path, max_iterations=args.max_iterations)
+
+    elif args.command == "queue-metadata":
+        init_db()
+        documents = fetch_all_documents()
+        queued = 0
+        for doc in documents:
+            create_pending_enhancement(doc.id, EnhancementType.PAPERPILE_METADATA)
+            queued += 1
+        print(f"Queued {queued} documents for metadata sync.")
 
     elif args.command == "sync-es":
         import logging

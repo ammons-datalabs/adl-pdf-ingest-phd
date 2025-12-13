@@ -280,3 +280,84 @@ class TestPdfExtractorRobot:
         pending_list = fetch_pending_by_status([PendingEnhancementStatus.FAILED])
         pending = [p for p in pending_list if p.document_id == doc.id][0]
         assert "Test error" in pending.last_error
+
+
+@pytest.mark.integration
+class TestPaperpileSyncRobot:
+    """Test Paperpile sync robot with tracking."""
+
+    def test_process_one_creates_metadata_enhancement(self, tmp_path):
+        from pdf_ingest.robots.paperpile_sync import process_one, load_manifest
+
+        init_db()
+        _cleanup_tables()
+
+        # Create a fake PDF with a name that matches the manifest
+        fake_pdf = tmp_path / "Test Paper 2024.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([fake_pdf])
+
+        docs = fetch_all_documents()
+        doc = docs[0]
+
+        # Create pending enhancement for metadata
+        create_pending_enhancement(doc.id, EnhancementType.PAPERPILE_METADATA)
+
+        # Create a fake manifest
+        manifest_csv = tmp_path / "manifest.csv"
+        manifest_csv.write_text(
+            "file_name,title,venue,year,tags\n"
+            "Test Paper 2024.pdf,A Test Paper,Test Conference,2024,tag1;tag2\n"
+        )
+        manifest_map = load_manifest(manifest_csv)
+
+        result = process_one(manifest_map)
+
+        assert result == "completed"
+
+        # Check enhancement was created
+        enhancements = fetch_enhancements_for_document(doc.id)
+        meta_enh = [e for e in enhancements if e.enhancement_type == EnhancementType.PAPERPILE_METADATA]
+        assert len(meta_enh) == 1
+        assert meta_enh[0].content["title"] == "A Test Paper"
+        assert meta_enh[0].content["year"] == 2024
+        assert meta_enh[0].content["tags"] == ["tag1", "tag2"]
+
+        # Check pending status is COMPLETED
+        pending_list = fetch_pending_by_status([PendingEnhancementStatus.COMPLETED])
+        assert any(p.document_id == doc.id for p in pending_list)
+
+    def test_process_one_discards_when_no_manifest_match(self, tmp_path):
+        from pdf_ingest.robots.paperpile_sync import process_one, load_manifest
+
+        init_db()
+        _cleanup_tables()
+
+        # Create a fake PDF with a name NOT in the manifest
+        fake_pdf = tmp_path / "Unknown Paper.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([fake_pdf])
+
+        docs = fetch_all_documents()
+        doc = docs[0]
+
+        # Create pending enhancement for metadata
+        create_pending_enhancement(doc.id, EnhancementType.PAPERPILE_METADATA)
+
+        # Create an empty manifest (no matching entries)
+        manifest_csv = tmp_path / "manifest.csv"
+        manifest_csv.write_text("file_name,title,venue,year,tags\n")
+        manifest_map = load_manifest(manifest_csv)
+
+        result = process_one(manifest_map)
+
+        assert result == "discarded"
+
+        # Check NO enhancement was created
+        enhancements = fetch_enhancements_for_document(doc.id)
+        assert len(enhancements) == 0
+
+        # Check pending status is DISCARDED
+        pending_list = fetch_pending_by_status([PendingEnhancementStatus.DISCARDED])
+        pending = [p for p in pending_list if p.document_id == doc.id][0]
+        assert "No manifest entry found" in pending.last_error

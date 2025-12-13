@@ -3,28 +3,34 @@ Paperpile Sync Robot
 
 Syncs metadata from Paperpile CSV manifest to Enhancement records.
 
-This robot works in bulk mode (not from pending queue) since metadata
-comes from an external CSV file rather than document-by-document processing.
+Uses PendingEnhancement tracking:
+- Claims PAPERPILE_METADATA pending enhancements
+- Loads manifest CSV once, matches against pending documents
+- Creates enhancement + marks COMPLETED, or marks DISCARDED if no match
 
 Usage:
-    python -m pdf_ingest.robots.paperpile_sync
-    python -m pdf_ingest.robots.paperpile_sync --manifest path/to/manifest.csv
+    pdf-ingest queue-metadata                    # Queue documents for metadata sync
+    pdf-ingest run-robot paperpile-sync          # Process queue
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import logging
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from ..db import (
     create_enhancement,
-    fetch_all_documents,
+    fetch_document_by_id,
+    fetch_next_pending,
     init_db,
+    update_pending_status,
 )
-from ..models import EnhancementType
+from ..models import EnhancementType, PendingEnhancementStatus
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +47,9 @@ class ManifestRow:
     tags: list[str]
 
 
-def load_manifest(path: Path) -> List[ManifestRow]:
-    """Load and parse Paperpile CSV manifest."""
-    rows: List[ManifestRow] = []
+def load_manifest(path: Path) -> Dict[str, ManifestRow]:
+    """Load and parse Paperpile CSV manifest into a lookup dict."""
+    manifest_map: Dict[str, ManifestRow] = {}
     with path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         for r in reader:
@@ -60,65 +66,142 @@ def load_manifest(path: Path) -> List[ManifestRow]:
             tags_raw = r.get("tags") or ""
             tags = [t.strip() for t in tags_raw.split(";") if t.strip()]
 
-            rows.append(
-                ManifestRow(
-                    file_name=file_name,
-                    title=title,
-                    venue=venue,
-                    year=year,
-                    tags=tags,
-                )
+            row = ManifestRow(
+                file_name=file_name,
+                title=title,
+                venue=venue,
+                year=year,
+                tags=tags,
             )
-    return rows
+            manifest_map[file_name.lower()] = row
+    return manifest_map
 
 
-def sync_manifest(manifest_path: Path) -> int:
+# Pattern to match duplicate suffixes like (1), (2), (9), etc.
+_DUPLICATE_SUFFIX_PATTERN = re.compile(r"\(\d+\)")
+
+
+def _lookup_manifest(
+    file_name: str,
+    manifest_map: Dict[str, ManifestRow],
+) -> Optional[ManifestRow]:
+    """Look up a file in the manifest, with fallback for duplicate suffixes."""
+    key = file_name.lower()
+    row = manifest_map.get(key)
+
+    # Try without duplicate suffix (1), (2), etc. if no direct match
+    if not row and _DUPLICATE_SUFFIX_PATTERN.search(key):
+        alt_key = _DUPLICATE_SUFFIX_PATTERN.sub("", key).replace("  ", " ").strip()
+        row = manifest_map.get(alt_key)
+
+    return row
+
+
+def process_one(manifest_map: Dict[str, ManifestRow]) -> Optional[str]:
     """
-    Sync metadata from manifest to Enhancement records.
+    Process a single pending PAPERPILE_METADATA enhancement.
 
-    Returns count of documents updated.
+    Returns:
+        "completed" if enhancement was created
+        "discarded" if no manifest match found
+        None if queue is empty
     """
-    manifest = load_manifest(manifest_path)
-    manifest_map = {row.file_name.lower(): row for row in manifest}
+    pending = fetch_next_pending(EnhancementType.PAPERPILE_METADATA)
+    if pending is None:
+        return None
+
+    doc = fetch_document_by_id(pending.document_id)
+    if doc is None:
+        logger.warning("Document %d not found, marking DISCARDED", pending.document_id)
+        update_pending_status(pending.id, PendingEnhancementStatus.DISCARDED)
+        return "discarded"
+
+    # Look up in manifest
+    row = _lookup_manifest(doc.file_path.name, manifest_map)
+
+    if row is None:
+        # No metadata found for this document
+        logger.debug("No manifest entry for %s, marking DISCARDED", doc.file_path.name)
+        update_pending_status(
+            pending.id,
+            PendingEnhancementStatus.DISCARDED,
+            last_error="No manifest entry found",
+        )
+        return "discarded"
+
+    # Create enhancement with metadata
+    update_pending_status(pending.id, PendingEnhancementStatus.IMPORTING)
+
+    content = {
+        "title": row.title,
+        "venue": row.venue,
+        "year": row.year,
+        "tags": row.tags,
+    }
+
+    create_enhancement(
+        document_id=doc.id,
+        enhancement_type=EnhancementType.PAPERPILE_METADATA,
+        content=content,
+        robot_id=ROBOT_ID,
+    )
+
+    update_pending_status(pending.id, PendingEnhancementStatus.COMPLETED)
+    logger.debug("Synced metadata for %s", doc.file_path.name)
+    return "completed"
+
+
+def run_loop(
+    manifest_path: Path,
+    max_iterations: Optional[int] = None,
+    poll_interval: float = 1.0,
+) -> None:
+    """
+    Run the paperpile sync robot loop.
+
+    Args:
+        manifest_path: Path to Paperpile CSV manifest
+        max_iterations: Stop after N iterations (for testing); None = run forever
+        poll_interval: Seconds to wait when queue is empty
+    """
+    logger.info("Loading manifest from %s", manifest_path)
+    manifest_map = load_manifest(manifest_path)
     logger.info("Loaded %d entries from manifest", len(manifest_map))
 
-    documents = fetch_all_documents()
-    logger.info("Found %d documents in database", len(documents))
+    logger.info("Starting paperpile-sync robot loop...")
+    iterations = 0
+    completed = 0
+    discarded = 0
 
-    updated = 0
-    for doc in documents:
-        key = doc.file_path.name.lower()
-        row = manifest_map.get(key)
+    while True:
+        if max_iterations is not None and iterations >= max_iterations:
+            logger.info("Reached max iterations (%d), stopping", max_iterations)
+            break
 
-        # Try without (1) suffix if no direct match
-        if not row and "(1)" in key:
-            alt_key = key.replace("(1)", "").replace("  ", " ").strip()
-            row = manifest_map.get(alt_key)
+        result = process_one(manifest_map)
+        iterations += 1
 
-        if not row:
-            continue
+        if result == "completed":
+            completed += 1
+            if (completed + discarded) % 100 == 0:
+                logger.info("Processed %d documents...", completed + discarded)
+        elif result == "discarded":
+            discarded += 1
+            if (completed + discarded) % 100 == 0:
+                logger.info("Processed %d documents...", completed + discarded)
+        else:
+            # Queue empty
+            if max_iterations is None:
+                time.sleep(poll_interval)
+            else:
+                # In test mode with max_iterations, don't wait
+                break
 
-        # Create enhancement with metadata
-        content = {
-            "title": row.title,
-            "venue": row.venue,
-            "year": row.year,
-            "tags": row.tags,
-        }
-
-        create_enhancement(
-            document_id=doc.id,
-            enhancement_type=EnhancementType.PAPERPILE_METADATA,
-            content=content,
-            robot_id=ROBOT_ID,
-        )
-        updated += 1
-
-        if updated % 100 == 0:
-            logger.info("Synced %d documents...", updated)
-
-    logger.info("Sync complete. Updated %d documents.", updated)
-    return updated
+    logger.info(
+        "Paperpile sync complete: %d completed, %d discarded (no manifest match)",
+        completed,
+        discarded,
+    )
 
 
 def main() -> None:
@@ -137,6 +220,12 @@ def main() -> None:
         default="metadata/papers_manifest_normalized.csv",
         help="Path to Paperpile CSV manifest",
     )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Stop after N iterations (for testing)",
+    )
     args = parser.parse_args()
 
     init_db()
@@ -146,7 +235,7 @@ def main() -> None:
         logger.error("Manifest not found: %s", manifest_path)
         return
 
-    sync_manifest(manifest_path)
+    run_loop(manifest_path, max_iterations=args.max_iterations)
 
 
 if __name__ == "__main__":
