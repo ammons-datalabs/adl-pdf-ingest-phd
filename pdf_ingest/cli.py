@@ -10,6 +10,7 @@ from .db import init_db
 from .es_client import ESClient
 from .metadata import apply_manifest_to_db
 from .pipeline import run_pipeline
+from .worker import run_worker_loop
 
 
 def main() -> None:
@@ -82,6 +83,24 @@ def main() -> None:
         "--no-reset",
         action="store_true",
         help="Do not reset document status to NEW after updating metadata.",
+    )
+
+    # run-worker
+    worker_parser = subparsers.add_parser(
+        "run-worker",
+        help="Run worker to process jobs from the queue",
+    )
+    worker_parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=1.0,
+        help="Seconds to wait between polls when no jobs (default: 1.0)",
+    )
+    worker_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Stop after N iterations (for testing; default: run forever)",
     )
 
     args = parser.parse_args()
@@ -184,6 +203,11 @@ def main() -> None:
             reset_status=reset_status,
         )
         print(f"Updated metadata for {updated} documents.")
+    elif args.command == "run-worker":
+        run_worker_loop(
+            poll_interval=args.poll_interval,
+            max_iterations=args.max_iterations,
+        )
     else:
         parser.error(f"Unknown command: {args.command}")
 

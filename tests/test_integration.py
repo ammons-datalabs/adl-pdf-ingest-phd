@@ -93,11 +93,12 @@ def clean_test_index():
 
 @pytest.fixture
 def clean_test_db():
-    """Truncate documents table before/after test."""
+    """Truncate jobs and documents tables before/after test."""
     init_db()
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs")
             cur.execute("DELETE FROM documents")
         conn.commit()
 
@@ -105,6 +106,7 @@ def clean_test_db():
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs")
             cur.execute("DELETE FROM documents")
         conn.commit()
 
