@@ -1,11 +1,35 @@
-.venv
-__pycache__
+# Virtual environments
+.venv/
+.venv1/
+venv/
+
+# Python
+__pycache__/
 *.pyc
-.idea
-data/pdf_corpus_dev/*
-all_papers_raw/
-*.egg-info
-.eggs
+*.pyo
+*.egg-info/
+.eggs/
 dist/
 build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Project-specific
+all_papers_raw/
+processing/
+dev_corpus_list.txt
+notes/
+
+# Environment
 .env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local settings
+.claude/
