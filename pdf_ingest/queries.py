@@ -6,6 +6,17 @@ from elasticsearch import Elasticsearch
 
 from .config import get_settings
 
+# Boosted fields for multi-match queries
+# Higher boosts for structured metadata (title, abstract, keywords)
+# Lower boost for full_text to avoid drowning signal in noise
+SEARCH_FIELDS = [
+    "title^4",      # Title is most important
+    "abstract^3",   # Abstract is highly relevant
+    "keywords^3",   # Keywords are highly relevant
+    "authors^2",    # Author names
+    "full_text",    # Full text (no boost)
+]
+
 
 def _client_and_index():
     settings = get_settings()
@@ -19,7 +30,7 @@ def search_full_text(query: str, size: int = 10) -> List[Dict[str, Any]]:
         query={
             "multi_match": {
                 "query": query,
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
             }
         },
         size=size,
@@ -39,7 +50,7 @@ def search_by_year_range(
         query={
             "bool": {
                 "must": [
-                    {"multi_match": {"query": query, "fields": ["title^3", "full_text"]}}
+                    {"multi_match": {"query": query, "fields": SEARCH_FIELDS}}
                 ],
                 "filter": [
                     {"range": {"year": {"gte": year_from, "lte": year_to}}},
@@ -84,7 +95,7 @@ def _build_query_clause(query: str) -> Dict[str, Any]:
     # If just a simple query with no quotes
     if not phrases and terms:
         return {
-            "multi_match": {"query": " ".join(terms), "fields": ["title^3", "full_text"]}
+            "multi_match": {"query": " ".join(terms), "fields": SEARCH_FIELDS}
         }
 
     # If just a single phrase (entire query quoted)
@@ -92,7 +103,7 @@ def _build_query_clause(query: str) -> Dict[str, Any]:
         return {
             "multi_match": {
                 "query": phrases[0],
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
                 "type": "phrase",
             }
         }
@@ -102,14 +113,14 @@ def _build_query_clause(query: str) -> Dict[str, Any]:
 
     if terms:
         must_clauses.append({
-            "multi_match": {"query": " ".join(terms), "fields": ["title^3", "full_text"]}
+            "multi_match": {"query": " ".join(terms), "fields": SEARCH_FIELDS}
         })
 
     for phrase in phrases:
         must_clauses.append({
             "multi_match": {
                 "query": phrase,
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
                 "type": "phrase",
             }
         })

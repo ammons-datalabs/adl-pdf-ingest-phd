@@ -3,6 +3,10 @@ Paperpile Sync Robot
 
 Syncs metadata from Paperpile CSV manifest to Enhancement records.
 
+Supports two CSV formats:
+1. Full Paperpile export (papers_manifest.csv) - extracts all rich metadata
+2. Normalized format (papers_manifest_normalized.csv) - basic fields only
+
 Uses PendingEnhancement tracking:
 - Claims PAPERPILE_METADATA pending enhancements
 - Loads manifest CSV once, matches against pending documents
@@ -10,16 +14,17 @@ Uses PendingEnhancement tracking:
 
 Usage:
     pdf-ingest queue-metadata                    # Queue documents for metadata sync
-    pdf-ingest run-robot paperpile-sync          # Process queue
+    pdf-ingest run-robot paperpile-sync          # Process queue (uses full CSV)
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import logging
+import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -41,30 +46,109 @@ ROBOT_ID = "paperpile-sync"
 class ManifestRow:
     """Parsed row from Paperpile CSV manifest."""
     file_name: str
-    title: Optional[str]
-    venue: Optional[str]
-    year: Optional[int]
-    tags: list[str]
+    title: Optional[str] = None
+    venue: Optional[str] = None
+    year: Optional[int] = None
+    tags: List[str] = field(default_factory=list)
+    # Rich metadata (from full Paperpile export)
+    abstract: Optional[str] = None
+    authors: List[str] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=list)
+    doi: Optional[str] = None
+    arxiv_id: Optional[str] = None
+    item_type: Optional[str] = None
+
+
+def _parse_authors(authors_str: str) -> List[str]:
+    """Parse authors string into list of author names."""
+    if not authors_str:
+        return []
+    # Authors are comma-separated, e.g., "Smith J,Jones A,Brown K"
+    return [a.strip() for a in authors_str.split(",") if a.strip()]
+
+
+def _parse_keywords(keywords_str: str) -> List[str]:
+    """Parse keywords string into list."""
+    if not keywords_str:
+        return []
+    # Keywords can be semicolon or comma separated
+    if ";" in keywords_str:
+        return [k.strip() for k in keywords_str.split(";") if k.strip()]
+    return [k.strip() for k in keywords_str.split(",") if k.strip()]
+
+
+def _extract_filename_from_attachments(attachments: str) -> Optional[str]:
+    """Extract PDF filename from Paperpile Attachments field."""
+    if not attachments:
+        return None
+    # Format: "All Papers/X/Xia et al. 2025 - Title.pdf"
+    # Take first attachment if multiple (semicolon separated)
+    first_attachment = attachments.split(";")[0].strip()
+    if first_attachment:
+        return os.path.basename(first_attachment)
+    return None
 
 
 def load_manifest(path: Path) -> Dict[str, ManifestRow]:
-    """Load and parse Paperpile CSV manifest into a lookup dict."""
+    """
+    Load and parse Paperpile CSV manifest into a lookup dict.
+
+    Supports both full Paperpile export and normalized format.
+    """
     manifest_map: Dict[str, ManifestRow] = {}
+
     with path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+
+        # Detect format based on columns
+        is_full_format = "Attachments" in fieldnames or "Abstract" in fieldnames
+        is_normalized = "file_name" in fieldnames
+
+        if not is_full_format and not is_normalized:
+            logger.warning("Unknown CSV format, trying to parse as normalized")
+
         for r in reader:
-            file_name = (r.get("file_name") or "").strip()
+            # Extract filename
+            if is_full_format:
+                file_name = _extract_filename_from_attachments(r.get("Attachments", ""))
+            else:
+                file_name = (r.get("file_name") or "").strip()
+
             if not file_name:
                 continue
 
-            title = (r.get("title") or "").strip() or None
-            venue = (r.get("venue") or "").strip() or None
+            # Basic fields (both formats)
+            if is_full_format:
+                title = (r.get("Title") or "").strip() or None
+                # Venue: prefer Journal, then Proceedings title
+                venue = (r.get("Journal") or r.get("Proceedings title") or "").strip() or None
+                year_str = (r.get("Publication year") or "").strip()
+                tags_raw = r.get("Labels filed in") or ""
+            else:
+                title = (r.get("title") or "").strip() or None
+                venue = (r.get("venue") or "").strip() or None
+                year_str = (r.get("year") or "").strip()
+                tags_raw = r.get("tags") or ""
 
-            year_str = (r.get("year") or "").strip()
             year = int(year_str) if year_str else None
-
-            tags_raw = r.get("tags") or ""
             tags = [t.strip() for t in tags_raw.split(";") if t.strip()]
+
+            # Rich metadata (full format only)
+            if is_full_format:
+                abstract = (r.get("Abstract") or "").strip() or None
+                authors = _parse_authors(r.get("Authors") or "")
+                keywords = _parse_keywords(r.get("Keywords") or "")
+                doi = (r.get("DOI") or "").strip() or None
+                arxiv_id = (r.get("Arxiv ID") or "").strip() or None
+                item_type = (r.get("Item type") or "").strip() or None
+            else:
+                abstract = None
+                authors = []
+                keywords = []
+                doi = None
+                arxiv_id = None
+                item_type = None
 
             row = ManifestRow(
                 file_name=file_name,
@@ -72,8 +156,15 @@ def load_manifest(path: Path) -> Dict[str, ManifestRow]:
                 venue=venue,
                 year=year,
                 tags=tags,
+                abstract=abstract,
+                authors=authors,
+                keywords=keywords,
+                doi=doi,
+                arxiv_id=arxiv_id,
+                item_type=item_type,
             )
             manifest_map[file_name.lower()] = row
+
     return manifest_map
 
 
@@ -137,6 +228,13 @@ def process_one(manifest_map: Dict[str, ManifestRow]) -> Optional[str]:
         "venue": row.venue,
         "year": row.year,
         "tags": row.tags,
+        # Rich metadata
+        "abstract": row.abstract,
+        "authors": row.authors,
+        "keywords": row.keywords,
+        "doi": row.doi,
+        "arxiv_id": row.arxiv_id,
+        "item_type": row.item_type,
     }
 
     create_enhancement(
@@ -167,6 +265,15 @@ def run_loop(
     logger.info("Loading manifest from %s", manifest_path)
     manifest_map = load_manifest(manifest_path)
     logger.info("Loaded %d entries from manifest", len(manifest_map))
+
+    # Log stats about rich metadata
+    with_abstract = sum(1 for r in manifest_map.values() if r.abstract)
+    with_authors = sum(1 for r in manifest_map.values() if r.authors)
+    with_doi = sum(1 for r in manifest_map.values() if r.doi)
+    logger.info(
+        "Rich metadata: %d with abstract, %d with authors, %d with DOI",
+        with_abstract, with_authors, with_doi
+    )
 
     logger.info("Starting paperpile-sync robot loop...")
     iterations = 0
@@ -217,8 +324,8 @@ def main() -> None:
     parser.add_argument(
         "--manifest",
         type=str,
-        default="metadata/papers_manifest_normalized.csv",
-        help="Path to Paperpile CSV manifest",
+        default="metadata/papers_manifest.csv",
+        help="Path to Paperpile CSV manifest (default: full export)",
     )
     parser.add_argument(
         "--max-iterations",

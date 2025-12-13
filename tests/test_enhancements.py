@@ -12,8 +12,11 @@ from pdf_ingest.db import (
     init_db,
     get_conn,
     register_files,
+    register_document,
     fetch_document_by_id,
+    fetch_document_by_path,
     fetch_all_documents,
+    fetch_documents_with_enhancements,
     create_enhancement,
     fetch_enhancements_for_document,
     fetch_enhancement,
@@ -361,3 +364,243 @@ class TestPaperpileSyncRobot:
         pending_list = fetch_pending_by_status([PendingEnhancementStatus.DISCARDED])
         pending = [p for p in pending_list if p.document_id == doc.id][0]
         assert "No manifest entry found" in pending.last_error
+
+
+@pytest.mark.integration
+class TestDocumentFetchFunctions:
+    """Tests for document fetch functions."""
+
+    def test_register_document_returns_id(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        fake_pdf = tmp_path / "single_doc.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+
+        doc_id = register_document(fake_pdf)
+        assert doc_id is not None
+        assert doc_id > 0
+
+    def test_register_document_returns_none_on_duplicate(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        fake_pdf = tmp_path / "dup_doc.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+
+        doc_id1 = register_document(fake_pdf)
+        doc_id2 = register_document(fake_pdf)
+
+        assert doc_id1 is not None
+        assert doc_id2 is None
+
+    def test_fetch_document_by_path(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        fake_pdf = tmp_path / "by_path.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([fake_pdf])
+
+        doc = fetch_document_by_path(fake_pdf)
+        assert doc is not None
+        assert doc.file_path == fake_pdf
+
+    def test_fetch_document_by_path_returns_none_for_missing(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        missing_path = tmp_path / "nonexistent.pdf"
+        doc = fetch_document_by_path(missing_path)
+        assert doc is None
+
+    def test_fetch_document_by_id_returns_none_for_missing(self):
+        init_db()
+        _cleanup_tables()
+
+        doc = fetch_document_by_id(99999)
+        assert doc is None
+
+    def test_fetch_all_documents_with_limit(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        # Create multiple documents
+        for i in range(5):
+            pdf = tmp_path / f"doc_{i}.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n%test\n")
+            register_document(pdf)
+
+        docs = fetch_all_documents(limit=3)
+        assert len(docs) == 3
+
+        all_docs = fetch_all_documents()
+        assert len(all_docs) == 5
+
+
+@pytest.mark.integration
+class TestEnhancementFetchFunctions:
+    """Tests for enhancement fetch functions."""
+
+    def test_fetch_enhancement_by_type(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        fake_pdf = tmp_path / "fetch_enh.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([fake_pdf])
+
+        docs = fetch_all_documents()
+        doc = docs[0]
+
+        create_enhancement(
+            document_id=doc.id,
+            enhancement_type=EnhancementType.FULL_TEXT,
+            content={"text": "Test text"},
+            robot_id="test-robot",
+        )
+
+        enh = fetch_enhancement(doc.id, EnhancementType.FULL_TEXT)
+        assert enh is not None
+        assert enh.content["text"] == "Test text"
+
+    def test_fetch_enhancement_returns_none_for_missing(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        fake_pdf = tmp_path / "no_enh.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([fake_pdf])
+
+        docs = fetch_all_documents()
+        doc = docs[0]
+
+        enh = fetch_enhancement(doc.id, EnhancementType.FULL_TEXT)
+        assert enh is None
+
+    def test_fetch_documents_with_enhancements(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        # Create two documents with enhancements
+        pdf1 = tmp_path / "doc1.pdf"
+        pdf2 = tmp_path / "doc2.pdf"
+        pdf1.write_bytes(b"%PDF-1.4\n%test\n")
+        pdf2.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([pdf1, pdf2])
+
+        docs = fetch_all_documents()
+
+        # Add enhancements to first doc
+        create_enhancement(
+            document_id=docs[0].id,
+            enhancement_type=EnhancementType.FULL_TEXT,
+            content={"text": "Doc 1 text"},
+            robot_id="extractor",
+        )
+        create_enhancement(
+            document_id=docs[0].id,
+            enhancement_type=EnhancementType.PAPERPILE_METADATA,
+            content={"title": "Doc 1"},
+            robot_id="paperpile",
+        )
+
+        # Add enhancement to second doc
+        create_enhancement(
+            document_id=docs[1].id,
+            enhancement_type=EnhancementType.FULL_TEXT,
+            content={"text": "Doc 2 text"},
+            robot_id="extractor",
+        )
+
+        results = fetch_documents_with_enhancements()
+        assert len(results) == 2
+
+        # Check first doc has 2 enhancements
+        doc1_result = [r for r in results if r[0].id == docs[0].id][0]
+        assert len(doc1_result[1]) == 2
+
+        # Check second doc has 1 enhancement
+        doc2_result = [r for r in results if r[0].id == docs[1].id][0]
+        assert len(doc2_result[1]) == 1
+
+    def test_fetch_documents_with_enhancements_by_ids(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        pdf1 = tmp_path / "sel1.pdf"
+        pdf2 = tmp_path / "sel2.pdf"
+        pdf1.write_bytes(b"%PDF-1.4\n%test\n")
+        pdf2.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([pdf1, pdf2])
+
+        docs = fetch_all_documents()
+
+        # Only fetch the first doc
+        results = fetch_documents_with_enhancements(document_ids=[docs[0].id])
+        assert len(results) == 1
+        assert results[0][0].id == docs[0].id
+
+    def test_fetch_documents_with_enhancements_empty(self):
+        init_db()
+        _cleanup_tables()
+
+        results = fetch_documents_with_enhancements()
+        assert results == []
+
+
+@pytest.mark.integration
+class TestPendingEnhancementFilters:
+    """Tests for pending enhancement filters."""
+
+    def test_fetch_pending_by_status_with_type_filter(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        pdf1 = tmp_path / "filter1.pdf"
+        pdf2 = tmp_path / "filter2.pdf"
+        pdf1.write_bytes(b"%PDF-1.4\n%test\n")
+        pdf2.write_bytes(b"%PDF-1.4\n%test\n")
+        register_files([pdf1, pdf2])
+
+        docs = fetch_all_documents()
+
+        # Create different types
+        create_pending_enhancement(docs[0].id, EnhancementType.FULL_TEXT)
+        create_pending_enhancement(docs[1].id, EnhancementType.PAPERPILE_METADATA)
+
+        # Filter by type
+        full_text_pending = fetch_pending_by_status(
+            [PendingEnhancementStatus.PENDING],
+            enhancement_type=EnhancementType.FULL_TEXT,
+        )
+        assert len(full_text_pending) == 1
+        assert full_text_pending[0].enhancement_type == EnhancementType.FULL_TEXT
+
+    def test_fetch_pending_by_status_with_limit(self, tmp_path):
+        init_db()
+        _cleanup_tables()
+
+        # Create multiple documents
+        for i in range(5):
+            pdf = tmp_path / f"limit_{i}.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n%test\n")
+            register_document(pdf)
+
+        docs = fetch_all_documents()
+        for doc in docs:
+            create_pending_enhancement(doc.id, EnhancementType.FULL_TEXT)
+
+        # Fetch with limit
+        pending = fetch_pending_by_status(
+            [PendingEnhancementStatus.PENDING],
+            limit=2,
+        )
+        assert len(pending) == 2
+
+    def test_fetch_next_pending_returns_none_when_empty(self):
+        init_db()
+        _cleanup_tables()
+
+        pending = fetch_next_pending(EnhancementType.FULL_TEXT)
+        assert pending is None

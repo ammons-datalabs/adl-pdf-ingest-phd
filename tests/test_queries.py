@@ -9,8 +9,12 @@ from pdf_ingest.queries import (
     _parse_query_parts,
     _build_query_clause,
     search_full_text,
+    search_by_year_range,
+    search_by_tag,
     search_full_text_filtered,
     count_full_text_filtered,
+    search_with_context,
+    SEARCH_FIELDS,
 )
 
 
@@ -57,7 +61,7 @@ class TestBuildQueryClause:
         assert clause == {
             "multi_match": {
                 "query": "chunking",
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
             }
         }
 
@@ -67,7 +71,7 @@ class TestBuildQueryClause:
         assert clause == {
             "multi_match": {
                 "query": "content-defined chunking",
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
                 "type": "phrase",
             }
         }
@@ -85,14 +89,14 @@ class TestBuildQueryClause:
         assert must[0] == {
             "multi_match": {
                 "query": "dedup",
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
             }
         }
         # Second clause: phrase
         assert must[1] == {
             "multi_match": {
                 "query": "message-locked encryption",
-                "fields": ["title^3", "full_text"],
+                "fields": SEARCH_FIELDS,
                 "type": "phrase",
             }
         }
@@ -115,7 +119,7 @@ class TestSearchFullText:
             query={
                 "multi_match": {
                     "query": "deduplication",
-                    "fields": ["title^3", "full_text"],
+                    "fields": SEARCH_FIELDS,
                 }
             },
             size=5,
@@ -219,3 +223,188 @@ class TestCountFullTextFiltered:
 
         mock_client.count.assert_called_once()
         mock_client.search.assert_not_called()
+
+
+class TestSearchByYearRange:
+    """Tests for search_by_year_range function."""
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_passes_year_range_filter(self, mock_client_and_index):
+        """Year range filter is correctly passed to ES."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_by_year_range("deduplication", year_from=2015, year_to=2020, size=5)
+
+        call_args = mock_client.search.call_args
+        query = call_args.kwargs["query"]
+
+        # Check it's a bool query
+        assert "bool" in query
+        assert "must" in query["bool"]
+        assert "filter" in query["bool"]
+
+        # Check query
+        assert query["bool"]["must"][0]["multi_match"]["query"] == "deduplication"
+
+        # Check year filter
+        filters = query["bool"]["filter"]
+        assert {"range": {"year": {"gte": 2015, "lte": 2020}}} in filters
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_returns_hits(self, mock_client_and_index):
+        """Returns hits from ES response."""
+        mock_client = MagicMock()
+        expected_hits = [{"_id": "1", "_source": {"title": "Test", "year": 2018}}]
+        mock_client.search.return_value = {"hits": {"hits": expected_hits}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        result = search_by_year_range("test", year_from=2015, year_to=2020)
+
+        assert result == expected_hits
+
+
+class TestSearchByTag:
+    """Tests for search_by_tag function."""
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_passes_tag_term_query(self, mock_client_and_index):
+        """Tag term query is correctly passed to ES."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_by_tag("Chunking", size=10)
+
+        call_args = mock_client.search.call_args
+        query = call_args.kwargs["query"]
+
+        # Check it's a term query
+        assert query == {"term": {"tags": "Chunking"}}
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_includes_venue_aggregation(self, mock_client_and_index):
+        """Includes venue aggregation in query."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_by_tag("Chunking", size=10)
+
+        call_args = mock_client.search.call_args
+        aggs = call_args.kwargs["aggs"]
+
+        assert "by_venue" in aggs
+        assert aggs["by_venue"] == {"terms": {"field": "venue"}}
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_returns_hits(self, mock_client_and_index):
+        """Returns hits from ES response."""
+        mock_client = MagicMock()
+        expected_hits = [{"_id": "1", "_source": {"title": "Test", "tags": ["Chunking"]}}]
+        mock_client.search.return_value = {"hits": {"hits": expected_hits}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        result = search_by_tag("Chunking")
+
+        assert result == expected_hits
+
+
+class TestSearchWithContext:
+    """Tests for search_with_context (grep-style) function."""
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_includes_highlight_config(self, mock_client_and_index):
+        """Highlight configuration is included in query."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_with_context("FSL", size=5, fragment_size=150, num_fragments=3)
+
+        call_args = mock_client.search.call_args
+        highlight = call_args.kwargs["highlight"]
+
+        assert "fields" in highlight
+        assert "full_text" in highlight["fields"]
+        assert highlight["fields"]["full_text"]["fragment_size"] == 150
+        assert highlight["fields"]["full_text"]["number_of_fragments"] == 3
+        assert highlight["fields"]["full_text"]["pre_tags"] == [">>>"]
+        assert highlight["fields"]["full_text"]["post_tags"] == ["<<<"]
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_sort_by_relevance_default(self, mock_client_and_index):
+        """Default sort is relevance (no sort clause)."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_with_context("test", sort="relevance")
+
+        call_args = mock_client.search.call_args
+        sort = call_args.kwargs["sort"]
+
+        assert sort is None
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_sort_by_year_desc(self, mock_client_and_index):
+        """Sort by year descending."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_with_context("test", sort="year-desc")
+
+        call_args = mock_client.search.call_args
+        sort = call_args.kwargs["sort"]
+
+        assert sort == [{"year": {"order": "desc", "missing": "_last"}}]
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_sort_by_year_asc(self, mock_client_and_index):
+        """Sort by year ascending."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_with_context("test", sort="year-asc")
+
+        call_args = mock_client.search.call_args
+        sort = call_args.kwargs["sort"]
+
+        assert sort == [{"year": {"order": "asc", "missing": "_last"}}]
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_highlight_term_override(self, mock_client_and_index):
+        """Custom highlight term is used when provided."""
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"hits": []}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        search_with_context("deduplication", highlight_term="FSL")
+
+        call_args = mock_client.search.call_args
+        highlight = call_args.kwargs["highlight"]
+
+        assert "highlight_query" in highlight
+        assert highlight["highlight_query"] == {"match": {"full_text": "FSL"}}
+
+    @patch("pdf_ingest.queries._client_and_index")
+    def test_returns_hits_with_highlights(self, mock_client_and_index):
+        """Returns hits including highlight data."""
+        mock_client = MagicMock()
+        expected_hits = [
+            {
+                "_id": "1",
+                "_source": {"title": "Test Paper"},
+                "highlight": {"full_text": ["...>>>FSL<<< dataset..."]}
+            }
+        ]
+        mock_client.search.return_value = {"hits": {"hits": expected_hits}}
+        mock_client_and_index.return_value = (mock_client, "papers")
+
+        result = search_with_context("FSL")
+
+        assert result == expected_hits
+        assert "highlight" in result[0]

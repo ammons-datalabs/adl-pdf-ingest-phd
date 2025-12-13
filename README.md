@@ -2,17 +2,18 @@
 
 A compact but realistic **evidence-ingestion pipeline** for PDF research papers, implemented in Python with **PostgreSQL** for metadata and **Elasticsearch** for full-text search.
 
-This project ingests PDF documents, extracts and cleans text, enriches metadata from Paperpile, and indexes everything into Elasticsearch to support structured and free-text search. It includes unit + integration tests, a small synthetic test corpus, and a modular codebase ready to be extended with queue/worker orchestration or an API layer.
+This project ingests PDF documents, extracts and cleans text, enriches metadata from Paperpile, and indexes everything into Elasticsearch to support structured and free-text search. It uses an **enhancement-based architecture** where robots process documents asynchronously, creating typed enhancement records.
 
-Locally, it runs across my ~700-document PhD corpus, making it a practical sandbox for exploring research-document ingestion, metadata workflows, and search patterns similar to evidence-platform pipelines.
+Locally, it runs across my ~620-document PhD corpus, making it a practical sandbox for exploring research-document ingestion, metadata workflows, and search patterns similar to evidence-platform pipelines.
 
 ## Features
 
 - **PDF text extraction** using PyMuPDF with text cleaning (whitespace normalization, page number removal)
-- **PostgreSQL** for document registry and status tracking
-- **Elasticsearch** for full-text search with relevance scoring
-- **Metadata enrichment** from Paperpile CSV exports (title, venue, year, tags)
-- **Tag-aware search** using your Paperpile labels
+- **Enhancement-based architecture** - Documents + typed Enhancements (FULL_TEXT, PAPERPILE_METADATA)
+- **Robot pattern** - Async workers (pdf-extractor, paperpile-sync) with state machine tracking
+- **Rich metadata** from Paperpile CSV (title, abstract, authors, keywords, DOI, venue, year, tags)
+- **Boosted multi-field search** - title^4, abstract^3, keywords^3, authors^2, full_text
+- **Zero-downtime ES migrations** - Alias-based versioned indices (papers_v1, papers_v2, ...)
 - **Context search** (grep-style) showing text snippets around matches
 
 ## Architecture
@@ -24,16 +25,31 @@ PDF Source (all_papers_raw/)
 [Stage] --> processing/ (copy PDFs for ingestion)
     |
     v
-[Discover] --> PostgreSQL (document registry, status: NEW/INDEXED/FAILED)
+[Register] --> PostgreSQL documents table
+    |          + queue PendingEnhancement(FULL_TEXT)
+    v
+[pdf-extractor robot] --> Enhancement(FULL_TEXT, content={text: "..."})
     |
     v
-[Extract] --> PyMuPDF text extraction
+[queue-metadata] --> queue PendingEnhancement(PAPERPILE_METADATA)
     |
     v
-[Clean] --> Normalize whitespace, remove page numbers
+[paperpile-sync robot] --> Enhancement(PAPERPILE_METADATA, content={title, abstract, authors, ...})
     |
     v
-[Index] --> Elasticsearch (full_text + metadata for search)
+[sync-es] --> Elasticsearch (papers_v1 via "papers" alias)
+```
+
+### Data Model
+
+```
+Document (id, file_path, created_at)
+    |
+    +-- Enhancement (FULL_TEXT)
+    |       content: {text: "extracted pdf text..."}
+    |
+    +-- Enhancement (PAPERPILE_METADATA)
+            content: {title, abstract, authors, keywords, doi, arxiv_id, venue, year, tags, item_type}
 ```
 
 ## Prerequisites
@@ -75,39 +91,44 @@ PDF Source (all_papers_raw/)
 
 ## Usage
 
-### Stage and Ingest PDFs
+### Full Pipeline
 
 ```bash
-# Stage PDFs from source to processing directory
+# 1. Stage PDFs from source to processing directory
 pdf-ingest stage                    # Copy all PDFs
-pdf-ingest stage --limit 50         # Copy first 50 PDFs
-pdf-ingest stage --pattern "*2024*" # Copy PDFs matching pattern
+pdf-ingest stage --limit 50         # Copy first 50
 
-# Run ingestion pipeline on staged PDFs
-pdf-ingest run
-```
+# 2. Register documents and queue for extraction
+pdf-ingest register
 
-### Enrich with Paperpile Metadata
+# 3. Extract text from PDFs
+pdf-ingest run-robot pdf-extractor
 
-```bash
-pdf-ingest enrich-metadata --manifest metadata/papers_manifest_normalized.csv
-pdf-ingest run  # Re-index with metadata
+# 4. Queue and sync Paperpile metadata
+pdf-ingest queue-metadata
+pdf-ingest run-robot paperpile-sync --manifest metadata/papers_manifest.csv
+
+# 5. Sync to Elasticsearch
+pdf-ingest sync-es
 ```
 
 ### Search
 
 ```bash
-# Basic search
-pdf-ingest search --query "deduplication" --size 10
+# Basic search (boosted multi-field: title^4, abstract^3, keywords^3, authors^2, full_text)
+pdf-ingest search -q "deduplication" --size 10
 
 # Filter by year
-pdf-ingest search --query "content-defined chunking" --year-from 2015 --year-to 2025
+pdf-ingest search -q "content-defined chunking" --year-from 2015
 
 # Filter by Paperpile tag
-pdf-ingest search --query "" --tag "Fingerprint-Indexing"
+pdf-ingest search -q "" --tag "Chunking"
+
+# Count matching documents
+pdf-ingest search -q "encryption" --tag "Secure Dedup" --count
 
 # Combined filters
-pdf-ingest search --query "encrypted" --tag "Secure Dedup" --year-from 2018
+pdf-ingest search -q "encrypted" --tag "Secure Dedup" --year-from 2018
 ```
 
 ### Context Search (grep-style)
@@ -115,8 +136,28 @@ pdf-ingest search --query "encrypted" --tag "Secure Dedup" --year-from 2018
 Show text snippets around matches:
 
 ```bash
-pdf-ingest grep --query "FSL" --size 5
-pdf-ingest grep --query "Rabin fingerprint" --size 3 --fragments 5
+pdf-ingest grep -q "FSL" --size 5
+pdf-ingest grep -q "Rabin fingerprint" --size 3 --fragments 5 --fragment-size 200
+pdf-ingest grep -q "neural" --sort year-desc
+```
+
+### Elasticsearch Management
+
+```bash
+# Check index status
+pdf-ingest es-status
+
+# Migrate to new index version (zero-downtime)
+pdf-ingest es-migrate
+
+# Rollback to previous version
+pdf-ingest es-rollback
+
+# Clean up old versions (keep latest 2)
+pdf-ingest es-cleanup --keep 2
+
+# Full rebuild
+pdf-ingest sync-es --rebuild
 ```
 
 ## Project Structure
@@ -126,41 +167,47 @@ adl-pdf-ingest-phd/
 ├── pdf_ingest/
 │   ├── cli.py              # Command-line interface
 │   ├── config.py           # Settings (env vars, paths)
-│   ├── models.py           # Document dataclass, DocumentStatus enum
+│   ├── models.py           # Document, Enhancement, PendingEnhancement
 │   ├── db.py               # PostgreSQL operations
-│   ├── discover.py         # PDF discovery and registration
 │   ├── extractor.py        # PyMuPDF text extraction
 │   ├── cleaning.py         # Text cleaning utilities
-│   ├── es_client.py        # Elasticsearch client
-│   ├── metadata.py         # CSV manifest enrichment
-│   ├── queries.py          # Search functions
-│   └── pipeline.py         # Main orchestration
-├── all_papers_raw/         # Source PDFs (gitignored)
-├── processing/             # Staged PDFs for ingestion (gitignored)
+│   ├── es_client.py        # ES client + IndexManager (migrations)
+│   ├── queries.py          # Search functions (SEARCH_FIELDS)
+│   └── robots/
+│       ├── pdf_extractor.py    # Text extraction robot
+│       └── paperpile_sync.py   # Metadata sync robot
 ├── metadata/
-│   ├── papers_manifest.csv             # Raw Paperpile export (example)
-│   └── papers_manifest_normalized.csv  # Normalized manifest for ingestion
+│   ├── papers_manifest.csv             # Full Paperpile export (rich metadata)
+│   └── papers_manifest_normalized.csv  # Normalized format (basic fields)
 ├── tests/
-│   ├── test_extractor_basic.py
 │   ├── test_cleaning.py
-│   ├── test_db_roundtrip.py
-│   └── test_integration.py
+│   ├── test_enhancements.py
+│   ├── test_extractor_basic.py
+│   └── test_queries.py
+├── notes/
+│   └── demo_queries.md     # Example queries with results
 └── tools/
-    ├── select_dev_corpus.py    # Select diverse dev PDFs
-    └── convert_manifest.py     # Convert Paperpile CSV
+    └── select_dev_corpus.py
 ```
 
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `stage` | Copy PDFs from source to processing directory |
 | `init-db` | Create PostgreSQL schema |
 | `init-es` | Create Elasticsearch index |
-| `run` | Run ingestion pipeline |
-| `enrich-metadata` | Apply CSV metadata to documents |
+| `stage` | Copy PDFs from source to processing directory |
+| `register` | Register PDFs and queue for extraction |
+| `run-robot pdf-extractor` | Extract text from queued documents |
+| `queue-metadata` | Queue documents for metadata sync |
+| `run-robot paperpile-sync` | Sync metadata from Paperpile CSV |
+| `sync-es` | Sync documents to Elasticsearch |
 | `search` | Search with filters (year, tag) |
 | `grep` | Search with context snippets |
+| `es-status` | Show ES index status |
+| `es-migrate` | Migrate to new index version |
+| `es-rollback` | Rollback to previous version |
+| `es-cleanup` | Delete old index versions |
 
 ## Environment Variables
 
@@ -175,27 +222,37 @@ PDF_PROCESSING=/path/to/processing  # Default: processing/
 ## Running Tests
 
 ```bash
-# Run all tests (requires PostgreSQL + Elasticsearch)
+# Run all tests
 pytest
 
-# Run only unit tests (no services required)
-pytest -m "not integration"
+# Run with verbose output
+pytest -v
 
-# Run only integration tests
-pytest -m integration
+# Run specific test file
+pytest tests/test_enhancements.py
 ```
 
 ## Metadata
 
 The `metadata/` directory contains:
 
-- **`papers_manifest.csv`** - Example raw Paperpile CSV export. To use your own, export from Paperpile and run `tools/convert_manifest.py`.
-- **`papers_manifest_normalized.csv`** - Normalized format used by `enrich-metadata` command. Contains: `file_name`, `title`, `venue`, `year`, `tags`.
+- **`papers_manifest.csv`** - Full Paperpile CSV export with rich metadata (abstract, authors, keywords, DOI, etc.)
+- **`papers_manifest_normalized.csv`** - Normalized format with basic fields only (file_name, title, venue, year, tags)
 
-To convert your own Paperpile export:
+The paperpile-sync robot auto-detects the format and extracts all available fields.
 
-```bash
-python tools/convert_manifest.py
+## Search Fields
+
+Queries use boosted multi-field search:
+
+```python
+SEARCH_FIELDS = [
+    "title^4",      # Highest boost
+    "abstract^3",   # High boost
+    "keywords^3",   # High boost
+    "authors^2",    # Medium boost
+    "full_text",    # No boost
+]
 ```
 
 ## License

@@ -91,6 +91,36 @@ def main() -> None:
         help="Delete and recreate index before syncing",
     )
 
+    # es-status
+    subparsers.add_parser(
+        "es-status",
+        help="Show Elasticsearch index status (version, document count)",
+    )
+
+    # es-migrate
+    subparsers.add_parser(
+        "es-migrate",
+        help="Migrate ES index to new version with updated mapping",
+    )
+
+    # es-rollback
+    subparsers.add_parser(
+        "es-rollback",
+        help="Roll back ES index to previous version",
+    )
+
+    # es-cleanup
+    cleanup_parser = subparsers.add_parser(
+        "es-cleanup",
+        help="Delete old ES index versions",
+    )
+    cleanup_parser.add_argument(
+        "--keep",
+        type=int,
+        default=2,
+        help="Number of versions to keep (default: 2)",
+    )
+
     # search
     search_parser = subparsers.add_parser(
         "search", help="Free-text search over indexed PDFs"
@@ -207,6 +237,55 @@ def main() -> None:
             print("Deleted existing index.")
         count = bulk_sql_to_es()
         print(f"Synced {count} documents to Elasticsearch.")
+
+    elif args.command == "es-status":
+        es = ESClient()
+        status = es.manager.status()
+        if not status.get("exists"):
+            print(f"Index '{status['alias']}' does not exist.")
+        else:
+            print(f"Alias:     {status['alias']}")
+            print(f"Index:     {status['current_index']}")
+            print(f"Version:   {status['version']}")
+            print(f"Documents: {status['document_count']}")
+            if len(status['all_versions']) > 1:
+                print(f"All versions: {', '.join(status['all_versions'])}")
+
+    elif args.command == "es-migrate":
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+        es = ESClient()
+        new_index = es.manager.migrate()
+        print(f"Migrated to {new_index}")
+
+    elif args.command == "es-rollback":
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+        es = ESClient()
+        try:
+            old_index = es.manager.rollback()
+            print(f"Rolled back to {old_index}")
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    elif args.command == "es-cleanup":
+        import logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+        es = ESClient()
+        deleted = es.manager.delete_old_versions(keep_latest=args.keep)
+        if deleted:
+            print(f"Deleted: {', '.join(deleted)}")
+        else:
+            print("No old versions to delete.")
 
     elif args.command == "search":
         q = args.query
