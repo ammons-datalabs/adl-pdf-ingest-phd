@@ -15,6 +15,7 @@ from .models import (
     EnhancementType,
     PendingEnhancement,
     PendingEnhancementStatus,
+    StateTransitionError,
 )
 
 
@@ -366,12 +367,54 @@ def fetch_next_pending(
     )
 
 
+def fetch_pending_by_id(pending_id: int) -> Optional[PendingEnhancement]:
+    """Fetch a pending enhancement by ID."""
+    sql = """
+    SELECT id, document_id, enhancement_type, status, created_at, updated_at, attempts, last_error
+    FROM pending_enhancements
+    WHERE id = %s;
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (pending_id,))
+            row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return PendingEnhancement(
+        id=row["id"],
+        document_id=row["document_id"],
+        enhancement_type=EnhancementType(row["enhancement_type"]),
+        status=PendingEnhancementStatus(row["status"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        attempts=row["attempts"],
+        last_error=row["last_error"],
+    )
+
+
 def update_pending_status(
     pending_id: int,
-    status: PendingEnhancementStatus,
+    new_status: PendingEnhancementStatus,
     last_error: Optional[str] = None,
 ) -> None:
-    """Update pending enhancement status."""
+    """
+    Update pending enhancement status with transition guard.
+
+    Raises:
+        StateTransitionError: If the transition is not allowed.
+        ValueError: If the pending enhancement is not found.
+    """
+    # Fetch current state to validate transition
+    pending = fetch_pending_by_id(pending_id)
+    if pending is None:
+        raise ValueError(f"PendingEnhancement {pending_id} not found")
+
+    # Guard the transition
+    pending.status.guard_transition(new_status)
+
+    # Perform the update
     sql = """
     UPDATE pending_enhancements
     SET status = %s,
@@ -381,7 +424,7 @@ def update_pending_status(
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (status.value, last_error, pending_id))
+            cur.execute(sql, (new_status.value, last_error, pending_id))
         conn.commit()
 
 
