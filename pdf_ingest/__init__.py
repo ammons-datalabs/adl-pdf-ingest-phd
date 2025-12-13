@@ -1,12 +1,19 @@
 """PDF Ingestion Pipeline for research papers."""
 
 from .config import get_settings
-from .models import Document, DocumentStatus
-from .pipeline import run_pipeline
+from .models import (
+    Document,
+    Enhancement,
+    EnhancementType,
+    PendingEnhancement,
+    PendingEnhancementStatus,
+)
 
 __all__ = [
     "get_settings",
     "Document",
-    "DocumentStatus",
-    "run_pipeline",
+    "Enhancement",
+    "EnhancementType",
+    "PendingEnhancement",
+    "PendingEnhancementStatus",
 ]
