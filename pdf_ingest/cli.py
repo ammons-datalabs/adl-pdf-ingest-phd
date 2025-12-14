@@ -70,7 +70,7 @@ def main() -> None:
     robot_parser.add_argument(
         "--manifest",
         type=str,
-        default="metadata/papers_manifest_normalized.csv",
+        default="metadata/papers_manifest.csv",
         help="Path to manifest CSV (for paperpile-sync)",
     )
 

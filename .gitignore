@@ -21,7 +21,7 @@ build/
 all_papers_raw/
 processing/
 dev_corpus_list.txt
-notes/
+metadata/papers_manifest.csv
 
 # Environment
 .env

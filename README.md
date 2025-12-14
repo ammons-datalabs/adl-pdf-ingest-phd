@@ -10,7 +10,8 @@ Locally, it runs across my ~620-document PhD corpus, making it a practical sandb
 
 - **PDF text extraction** using PyMuPDF with text cleaning (whitespace normalization, page number removal)
 - **Enhancement-based architecture** - Documents + typed Enhancements (FULL_TEXT, PAPERPILE_METADATA)
-- **Robot pattern** - Async workers (pdf-extractor, paperpile-sync) with state machine tracking
+- **Robot pattern** - Async workers (pdf-extractor, paperpile-sync) with guarded state machine
+- **State machine with guarded transitions** - Prevents invalid status changes, documents workflow
 - **Rich metadata** from Paperpile CSV (title, abstract, authors, keywords, DOI, venue, year, tags)
 - **Boosted multi-field search** - title^4, abstract^3, keywords^3, authors^2, full_text
 - **Zero-downtime ES migrations** - Alias-based versioned indices (papers_v1, papers_v2, ...)
@@ -51,6 +52,28 @@ Document (id, file_path, created_at)
     +-- Enhancement (PAPERPILE_METADATA)
             content: {title, abstract, authors, keywords, doi, arxiv_id, venue, year, tags, item_type}
 ```
+
+### State Machine
+
+PendingEnhancements use a guarded state machine that prevents invalid transitions:
+
+```
+PENDING -> PROCESSING -> IMPORTING -> INDEXING -> COMPLETED
+               |   \          |           |
+            EXPIRED  \     DISCARDED   INDEXING_FAILED
+               |      \       |
+            FAILED     -> DISCARDED
+                         (no match)
+
+Terminal: COMPLETED, DISCARDED, INDEXING_FAILED
+Retriable: FAILED, EXPIRED -> can return to PENDING
+```
+
+The `StateMachineMixin` provides:
+- `can_transition_to(status)` - check if transition is valid
+- `guard_transition(status)` - raise `StateTransitionError` if invalid
+
+All status updates go through `update_pending_status()` which guards transitions automatically.
 
 ## Prerequisites
 
@@ -177,13 +200,16 @@ adl-pdf-ingest-phd/
 │       ├── pdf_extractor.py    # Text extraction robot
 │       └── paperpile_sync.py   # Metadata sync robot
 ├── metadata/
-│   ├── papers_manifest.csv             # Full Paperpile export (rich metadata)
+│   ├── papers_manifest_sample.csv      # Sample with 5 open-access papers
 │   └── papers_manifest_normalized.csv  # Normalized format (basic fields)
 ├── tests/
 │   ├── test_cleaning.py
 │   ├── test_enhancements.py
+│   ├── test_es_migrations.py
 │   ├── test_extractor_basic.py
-│   └── test_queries.py
+│   ├── test_paperpile_parsers.py
+│   ├── test_queries.py
+│   └── test_state_machine.py
 ├── notes/
 │   └── demo_queries.md     # Example queries with results
 └── tools/
@@ -222,7 +248,10 @@ PDF_PROCESSING=/path/to/processing  # Default: processing/
 ## Running Tests
 
 ```bash
-# Run all tests
+# Run unit tests only (no database required)
+pytest -m "not integration"
+
+# Run all tests (requires Postgres via PG_DSN)
 pytest
 
 # Run with verbose output
@@ -232,14 +261,23 @@ pytest -v
 pytest tests/test_enhancements.py
 ```
 
+**Note:** Integration tests (`@pytest.mark.integration`) require a running PostgreSQL instance. Set `PG_DSN` environment variable or use the default `postgresql://postgres:postgres@localhost:5432/pdf_ingest`.
+
 ## Metadata
 
 The `metadata/` directory contains:
 
-- **`papers_manifest.csv`** - Full Paperpile CSV export with rich metadata (abstract, authors, keywords, DOI, etc.)
-- **`papers_manifest_normalized.csv`** - Normalized format with basic fields only (file_name, title, venue, year, tags)
+- **`papers_manifest_sample.csv`** - Sample with 5 open-access papers (full Paperpile format with abstracts)
+- **`papers_manifest_normalized.csv`** - Normalized format with basic fields (file_name, title, venue, year, tags)
 
-The paperpile-sync robot auto-detects the format and extracts all available fields.
+The paperpile-sync robot auto-detects the CSV format and extracts all available fields.
+
+**Note:** The full `papers_manifest.csv` (with abstracts from publisher databases) is gitignored. To use your own Paperpile export:
+
+```bash
+# Export from Paperpile as CSV, place in metadata/
+pdf-ingest run-robot paperpile-sync --manifest metadata/papers_manifest.csv
+```
 
 ## Search Fields
 

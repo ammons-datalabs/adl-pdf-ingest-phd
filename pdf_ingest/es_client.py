@@ -263,6 +263,7 @@ class IndexManager:
         deleted = []
 
         # Find and delete all versioned indices
+        # Don't break on gaps - indices may have been deleted via es-cleanup
         for v in range(1, 100):  # Reasonable upper bound
             index_name = self._generate_index_name(v)
             try:
@@ -270,11 +271,8 @@ class IndexManager:
                     self.client.indices.delete(index=index_name)
                     deleted.append(index_name)
                     logger.info("Deleted index: %s", index_name)
-                else:
-                    break  # No more versions
             except Exception as e:
                 logger.warning("Failed to delete %s: %s", index_name, e)
-                break
 
         return deleted
 

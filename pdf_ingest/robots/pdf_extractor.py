@@ -120,6 +120,10 @@ def run_loop(
 ) -> None:
     """
     Continuously poll for and process pending FULL_TEXT enhancements.
+
+    Args:
+        poll_interval: Seconds to wait when queue is empty (daemon mode only)
+        max_iterations: Stop after N iterations; if set and queue empties, exit immediately
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -132,6 +136,8 @@ def run_loop(
     init_db()
 
     iterations = 0
+    processed_count = 0
+
     while True:
         if max_iterations is not None and iterations >= max_iterations:
             logger.info("Reached max iterations (%d), stopping.", max_iterations)
@@ -140,9 +146,20 @@ def run_loop(
         processed = process_one()
         iterations += 1
 
-        if not processed:
-            logger.debug("No pending items, sleeping %.1fs", poll_interval)
-            time.sleep(poll_interval)
+        if processed:
+            processed_count += 1
+            if processed_count % 100 == 0:
+                logger.info("Processed %d documents...", processed_count)
+        else:
+            # Queue empty
+            if max_iterations is not None:
+                # Batch mode: exit when queue empties
+                logger.info("Queue empty, processed %d documents.", processed_count)
+                break
+            else:
+                # Daemon mode: keep polling
+                logger.debug("No pending items, sleeping %.1fs", poll_interval)
+                time.sleep(poll_interval)
 
 
 if __name__ == "__main__":
