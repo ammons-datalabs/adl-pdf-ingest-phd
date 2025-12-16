@@ -130,6 +130,7 @@ def main() -> None:
     search_parser.add_argument("--year-from", type=int)
     search_parser.add_argument("--year-to", type=int)
     search_parser.add_argument("--tag", type=str, help="Filter by tag")
+    search_parser.add_argument("--folder", type=str, help="Filter by folder")
     search_parser.add_argument("--count", action="store_true", help="Only show count of matching documents")
 
     # grep (search with context)
@@ -143,6 +144,7 @@ def main() -> None:
     grep_parser.add_argument("--sort", choices=["relevance", "year-desc", "year-asc"], default="relevance", help="Sort order")
     grep_parser.add_argument("--highlight", type=str, help="Term to highlight (defaults to query)")
     grep_parser.add_argument("--tag", type=str, help="Filter by Paperpile tag")
+    grep_parser.add_argument("--folder", type=str, help="Filter by Paperpile folder")
     grep_parser.add_argument("--year-from", type=int, help="Minimum publication year")
     grep_parser.add_argument("--year-to", type=int, help="Maximum publication year")
 
@@ -296,6 +298,7 @@ def main() -> None:
         year_from = args.year_from
         year_to = args.year_to
         tag = args.tag
+        folder = args.folder
 
         if args.count:
             count = queries.count_full_text_filtered(
@@ -303,6 +306,7 @@ def main() -> None:
                 year_from=year_from,
                 year_to=year_to,
                 tag=tag,
+                folder=folder,
             )
             print(count)
         else:
@@ -311,6 +315,7 @@ def main() -> None:
                 year_from=year_from,
                 year_to=year_to,
                 tag=tag,
+                folder=folder,
                 size=size,
             )
 
@@ -333,6 +338,7 @@ def main() -> None:
             year_from=args.year_from,
             year_to=args.year_to,
             tag=args.tag,
+            folder=args.folder,
         )
 
         for h in hits:

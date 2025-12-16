@@ -138,6 +138,50 @@ class TestLoadManifest:
         assert row.year == 2024
         assert row.tags == ["label1", "label2"]
 
+    def test_loads_folders_from_full_format(self, tmp_path):
+        """Loads 'Folders filed in' from full Paperpile export."""
+        csv_file = tmp_path / "manifest.csv"
+        csv_file.write_text(
+            "Title,Abstract,Authors,Keywords,DOI,Arxiv ID,Item type,Journal,"
+            "Proceedings title,Publication year,Labels filed in,Folders filed in,Attachments\n"
+            '"Paper Title","","","","","","Journal Article",'
+            '"Test Journal","","2024","tag1;tag2","Thesis;Background","All Papers/P/Paper.pdf"\n'
+        )
+
+        result = load_manifest(csv_file)
+
+        row = result["paper.pdf"]
+        assert row.folders == ["Thesis", "Background"]
+        assert row.tags == ["tag1", "tag2"]  # Tags still work
+
+    def test_folders_empty_when_column_missing(self, tmp_path):
+        """Folders defaults to empty list when column not present."""
+        csv_file = tmp_path / "manifest.csv"
+        csv_file.write_text(
+            "Title,Abstract,Authors,Keywords,DOI,Arxiv ID,Item type,Journal,"
+            "Proceedings title,Publication year,Labels filed in,Attachments\n"
+            '"Paper Title","","","","","","Journal Article",'
+            '"Test Journal","","2024","tag1","All Papers/P/Paper.pdf"\n'
+        )
+
+        result = load_manifest(csv_file)
+
+        row = result["paper.pdf"]
+        assert row.folders == []
+
+    def test_normalized_format_has_empty_folders(self, tmp_path):
+        """Normalized format doesn't have folders, defaults to empty list."""
+        csv_file = tmp_path / "manifest.csv"
+        csv_file.write_text(
+            "file_name,title,venue,year,tags\n"
+            "paper.pdf,Test Title,Test Venue,2024,tag1;tag2\n"
+        )
+
+        result = load_manifest(csv_file)
+
+        row = result["paper.pdf"]
+        assert row.folders == []
+
     def test_full_format_uses_proceedings_title_when_no_journal(self, tmp_path):
         """Uses Proceedings title as venue when Journal is empty."""
         csv_file = tmp_path / "manifest.csv"

@@ -134,6 +134,7 @@ def search_full_text_filtered(
     year_from: int | None = None,
     year_to: int | None = None,
     tag: str | None = None,
+    folder: str | None = None,
     size: int = 10,
 ) -> List[Dict[str, Any]]:
     client, index = _client_and_index()
@@ -150,6 +151,9 @@ def search_full_text_filtered(
 
     if tag:
         filters.append({"term": {"tags": tag}})
+
+    if folder:
+        filters.append({"term": {"folders": folder}})
 
     body: Dict[str, Any] = {
         "query": {
@@ -169,6 +173,7 @@ def count_full_text_filtered(
     year_from: int | None = None,
     year_to: int | None = None,
     tag: str | None = None,
+    folder: str | None = None,
 ) -> int:
     """
     Count documents matching the query and filters.
@@ -187,6 +192,9 @@ def count_full_text_filtered(
 
     if tag:
         filters.append({"term": {"tags": tag}})
+
+    if folder:
+        filters.append({"term": {"folders": folder}})
 
     body: Dict[str, Any] = {
         "query": {
@@ -211,6 +219,7 @@ def search_with_context(
     year_from: int | None = None,
     year_to: int | None = None,
     tag: str | None = None,
+    folder: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Search with highlighted snippets showing context around matches.
@@ -218,6 +227,7 @@ def search_with_context(
     highlight_term: if provided, highlight this term instead of the query
     year_from, year_to: filter by publication year range
     tag: filter by Paperpile tag
+    folder: filter by Paperpile folder
     """
     client, index = _client_and_index()
 
@@ -257,6 +267,9 @@ def search_with_context(
 
     if tag:
         filters.append({"term": {"tags": tag}})
+
+    if folder:
+        filters.append({"term": {"folders": folder}})
 
     query_body: Dict[str, Any] = {
         "bool": {

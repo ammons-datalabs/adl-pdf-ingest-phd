@@ -60,6 +60,7 @@ INDEX_MAPPING = {
             "venue": {"type": "keyword"},
             "year": {"type": "integer"},
             "tags": {"type": "keyword"},
+            "folders": {"type": "keyword"},
             "item_type": {"type": "keyword"},
             # Identifiers
             "doi": {"type": "keyword"},
@@ -346,6 +347,7 @@ class ESClient:
                         "venue": metadata.get("venue"),
                         "year": metadata.get("year"),
                         "tags": metadata.get("tags", []),
+                        "folders": metadata.get("folders", []),
                         "item_type": metadata.get("item_type"),
                         "doi": metadata.get("doi"),
                         "arxiv_id": metadata.get("arxiv_id"),

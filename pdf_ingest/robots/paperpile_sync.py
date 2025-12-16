@@ -50,6 +50,7 @@ class ManifestRow:
     venue: Optional[str] = None
     year: Optional[int] = None
     tags: List[str] = field(default_factory=list)
+    folders: List[str] = field(default_factory=list)
     # Rich metadata (from full Paperpile export)
     abstract: Optional[str] = None
     authors: List[str] = field(default_factory=list)
@@ -142,6 +143,8 @@ def load_manifest(path: Path) -> Dict[str, ManifestRow]:
                 doi = (r.get("DOI") or "").strip() or None
                 arxiv_id = (r.get("Arxiv ID") or "").strip() or None
                 item_type = (r.get("Item type") or "").strip() or None
+                folders_raw = r.get("Folders filed in") or ""
+                folders = [f.strip() for f in folders_raw.split(";") if f.strip()]
             else:
                 abstract = None
                 authors = []
@@ -149,6 +152,7 @@ def load_manifest(path: Path) -> Dict[str, ManifestRow]:
                 doi = None
                 arxiv_id = None
                 item_type = None
+                folders = []
 
             row = ManifestRow(
                 file_name=file_name,
@@ -156,6 +160,7 @@ def load_manifest(path: Path) -> Dict[str, ManifestRow]:
                 venue=venue,
                 year=year,
                 tags=tags,
+                folders=folders,
                 abstract=abstract,
                 authors=authors,
                 keywords=keywords,
@@ -228,6 +233,7 @@ def process_one(manifest_map: Dict[str, ManifestRow]) -> Optional[str]:
         "venue": row.venue,
         "year": row.year,
         "tags": row.tags,
+        "folders": row.folders,
         # Rich metadata
         "abstract": row.abstract,
         "authors": row.authors,
