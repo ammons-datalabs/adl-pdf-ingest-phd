@@ -142,6 +142,9 @@ def main() -> None:
     grep_parser.add_argument("--fragment-size", type=int, default=150, help="Characters per snippet")
     grep_parser.add_argument("--sort", choices=["relevance", "year-desc", "year-asc"], default="relevance", help="Sort order")
     grep_parser.add_argument("--highlight", type=str, help="Term to highlight (defaults to query)")
+    grep_parser.add_argument("--tag", type=str, help="Filter by Paperpile tag")
+    grep_parser.add_argument("--year-from", type=int, help="Minimum publication year")
+    grep_parser.add_argument("--year-to", type=int, help="Maximum publication year")
 
     args = parser.parse_args()
 
@@ -327,6 +330,9 @@ def main() -> None:
             num_fragments=args.fragments,
             sort=args.sort,
             highlight_term=args.highlight,
+            year_from=args.year_from,
+            year_to=args.year_to,
+            tag=args.tag,
         )
 
         for h in hits:

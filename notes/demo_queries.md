@@ -172,3 +172,36 @@ pdf-ingest search -q "encrypted" --tag "Secure Dedup" --year-from 2018 --size 5
 ```
 
 **Notes:** Combines full-text search with Paperpile tags and year filtering
+
+---
+
+## Query 8: Context search with tag filter (grep + tag)
+```bash
+pdf-ingest grep -q "FSL" --tag "Secure Dedup" --size 3
+```
+
+```
+================================================================================
+  2.79  2016  Lazy exact deduplication
+        /Users/.../Ma et al. 2016 - Lazy exact deduplication.pdf
+
+    ...FSLHomes2 is published by the File system and Storage
+Lab (>>>FSL<<<) at Stony Brook University [39]....
+
+================================================================================
+  2.28  2015  SecDep: A user-aware efficient fine-grained secure deduplication scheme...
+        /Users/.../Zhou et al. 2015 - SecDep....pdf
+
+    ...Boston, MA, USA: USENIX Association, June 2012, pp. 261–272.
+[35] ">>>Fsl<<< traces and snapshots public archive,"
+http://tracer.filesystems.org/traces/fslhomes...
+
+================================================================================
+  1.58  2016  A Comprehensive Study of the Past, Present, and Future of Data Deduplication
+        /Users/.../Xia et al. 2016 - A Comprehensive Study....pdf
+
+    ...The File systems and Storage Lab (>>>FSL<<<) at Stony Brook University has
+published their traces collected from several graduate students' home directories...
+```
+
+**Notes:** Shows context snippets around "FSL" matches, filtered to only papers tagged "Secure Dedup" in Paperpile. Combines ES highlighting with tag filtering.

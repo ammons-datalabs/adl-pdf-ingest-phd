@@ -79,6 +79,7 @@ def _parse_query_parts(query: str) -> tuple[list[str], list[str]]:
     """
     Parse query into regular terms and phrase terms.
     Returns (terms, phrases) where phrases were quoted in the original query.
+    :rtype: tuple[list[str], list[str]]
     """
     import re
     phrases = re.findall(r'"([^"]+)"', query)
@@ -207,11 +208,16 @@ def search_with_context(
     num_fragments: int = 3,
     sort: str = "relevance",
     highlight_term: str | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    tag: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Search with highlighted snippets showing context around matches.
     sort: "relevance" (default), "year-desc", or "year-asc"
     highlight_term: if provided, highlight this term instead of the query
+    year_from, year_to: filter by publication year range
+    tag: filter by Paperpile tag
     """
     client, index = _client_and_index()
 
@@ -238,9 +244,30 @@ def search_with_context(
             "match": {"full_text": highlight_term}
         }
 
+    # Build query with optional filters
+    must: list[Dict[str, Any]] = []
+    if query:
+        must.append(_build_query_clause(query))
+
+    filters: list[Dict[str, Any]] = []
+    if year_from is not None or year_to is not None:
+        yr_from = year_from if year_from is not None else 0
+        yr_to = year_to if year_to is not None else 9999
+        filters.append({"range": {"year": {"gte": yr_from, "lte": yr_to}}})
+
+    if tag:
+        filters.append({"term": {"tags": tag}})
+
+    query_body: Dict[str, Any] = {
+        "bool": {
+            "must": must if must else [{"match_all": {}}],
+            "filter": filters,
+        }
+    }
+
     resp = client.search(
         index=index,
-        query=_build_query_clause(query),
+        query=query_body,
         highlight=highlight_config,
         size=size,
         sort=sort_clause,

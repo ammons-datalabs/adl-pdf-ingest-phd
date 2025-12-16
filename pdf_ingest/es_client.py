@@ -22,6 +22,7 @@ from .models import (
     get_full_text,
     get_metadata,
 )
+from .db import fetch_documents_with_enhancements
 
 logger = logging.getLogger(__name__)
 
@@ -320,37 +321,6 @@ class ESClient:
         """Ensure index exists with alias."""
         self.manager.initialize()
 
-    def index_document_with_enhancements(
-        self,
-        doc: Document,
-        enhancements: List[Enhancement],
-    ) -> None:
-        """
-        Index a document using data from its enhancements.
-
-        Builds the ES document body from:
-        - FULL_TEXT enhancement -> full_text field
-        - PAPERPILE_METADATA enhancement -> title, venue, year, tags, etc.
-        """
-        full_text = get_full_text(enhancements) or ""
-        metadata = get_metadata(enhancements)
-
-        body: Dict[str, Any] = {
-            "title": metadata.get("title"),
-            "abstract": metadata.get("abstract"),
-            "authors": metadata.get("authors", []),
-            "keywords": metadata.get("keywords", []),
-            "venue": metadata.get("venue"),
-            "year": metadata.get("year"),
-            "tags": metadata.get("tags", []),
-            "item_type": metadata.get("item_type"),
-            "doi": metadata.get("doi"),
-            "arxiv_id": metadata.get("arxiv_id"),
-            "file_path": str(doc.file_path),
-            "full_text": full_text,
-        }
-        self.client.index(index=self.alias, id=doc.id, document=body)
-
     def bulk_index(
         self,
         docs_with_enhancements: List[tuple[Document, List[Enhancement]]],
@@ -413,8 +383,6 @@ def bulk_sql_to_es(document_ids: Optional[List[int]] = None) -> int:
     Returns:
         Count of documents indexed.
     """
-    from .db import fetch_documents_with_enhancements
-
     logger.info("Starting bulk SQL to ES sync...")
 
     docs_with_enhancements = fetch_documents_with_enhancements(document_ids=document_ids)
