@@ -3,19 +3,52 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+
+# Explicit ligature expansion map (belt + suspenders after NFKC)
+LIGATURE_MAP = {
+    "\uFB00": "ff",   # ﬀ
+    "\uFB01": "fi",   # ﬁ
+    "\uFB02": "fl",   # ﬂ
+    "\uFB03": "ffi",  # ﬃ
+    "\uFB04": "ffl",  # ﬄ
+    "\uFB05": "st",   # ﬅ
+    "\uFB06": "st",   # ﬆ
+}
+
+
+def _normalize_ligatures(text: str) -> str:
+    """
+    Normalize Unicode ligatures to ASCII equivalents.
+
+    Uses NFKC normalization plus explicit replacement for reliability.
+    Critical for academic PDFs where ligatures break search.
+    """
+    # 1. Unicode normalization (compatibility decomposition)
+    text = unicodedata.normalize("NFKC", text)
+
+    # 2. Explicit ligature replacement (belt + suspenders)
+    for ligature, expansion in LIGATURE_MAP.items():
+        text = text.replace(ligature, expansion)
+
+    return text
 
 
 def clean_text(raw: str) -> str:
     """
     Clean extracted PDF text.
 
+    - Normalize Unicode ligatures to ASCII
     - Normalize line endings to \n
     - Drop lines that are only digits (page numbers)
     - Collapse runs of whitespace within lines
     - Collapse 3+ blank lines to max 2
     """
+    # Normalize ligatures first (critical for search)
+    text = _normalize_ligatures(raw)
+
     # Normalize line endings
-    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     # Process line by line
     lines = text.split("\n")

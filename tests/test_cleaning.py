@@ -37,3 +37,30 @@ def test_normalizes_line_endings():
     assert "\r" not in result
     assert "Windows" in result
     assert "line endings" in result
+
+
+def test_normalizes_ligatures():
+    """Expands typographic ligatures to ASCII equivalents."""
+    raw = "ﬁlesystems and ﬂow with coﬀee and eﬃcient eﬄuent"
+    result = clean_text(raw)
+    assert "filesystems" in result
+    assert "flow" in result
+    assert "coffee" in result
+    assert "efficient" in result
+    assert "effluent" in result
+    # Ligatures should be gone
+    assert "\ufb00" not in result  # ff
+    assert "\ufb01" not in result  # fi
+    assert "\ufb02" not in result  # fl
+    assert "\ufb03" not in result  # ffi
+    assert "\ufb04" not in result  # ffl
+
+
+def test_normalizes_st_ligatures():
+    """Expands st ligatures to ASCII equivalents."""
+    raw = "ﬅandard and ﬆyle"
+    result = clean_text(raw)
+    assert "standard" in result
+    assert "style" in result
+    assert "\ufb05" not in result  # st
+    assert "\ufb06" not in result  # st
