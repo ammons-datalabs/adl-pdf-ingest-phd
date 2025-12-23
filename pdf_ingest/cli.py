@@ -148,6 +148,17 @@ def main() -> None:
     grep_parser.add_argument("--year-from", type=int, help="Minimum publication year")
     grep_parser.add_argument("--year-to", type=int, help="Maximum publication year")
 
+    # venues (aggregate by venue)
+    venues_parser = subparsers.add_parser(
+        "venues", help="Show top venues for matching papers"
+    )
+    venues_parser.add_argument("--query", "-q", type=str, help="Full-text search query")
+    venues_parser.add_argument("--size", type=int, default=20, help="Number of venues to show")
+    venues_parser.add_argument("--tag", type=str, help="Filter by Paperpile tag")
+    venues_parser.add_argument("--folder", type=str, help="Filter by Paperpile folder")
+    venues_parser.add_argument("--year-from", type=int, help="Minimum publication year")
+    venues_parser.add_argument("--year-to", type=int, help="Maximum publication year")
+
     args = parser.parse_args()
 
     if args.command == "init-db":
@@ -353,6 +364,22 @@ def main() -> None:
             for snippet in highlights:
                 print(f"    ...{snippet}...")
                 print()
+
+    elif args.command == "venues":
+        results = queries.aggregate_venues(
+            query=args.query,
+            year_from=args.year_from,
+            year_to=args.year_to,
+            tag=args.tag,
+            folder=args.folder,
+            size=args.size,
+        )
+
+        if not results:
+            print("No venues found.")
+        else:
+            for r in results:
+                print(f"{r['count']:4d}  {r['venue']}")
 
     else:
         parser.error(f"Unknown command: {args.command}")

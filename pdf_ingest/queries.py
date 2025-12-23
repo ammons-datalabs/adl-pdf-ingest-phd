@@ -286,3 +286,53 @@ def search_with_context(
         sort=sort_clause,
     )
     return resp["hits"]["hits"]
+
+
+def aggregate_venues(
+    query: str | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    tag: str | None = None,
+    folder: str | None = None,
+    size: int = 20,
+) -> List[Dict[str, Any]]:
+    """
+    Aggregate documents by venue, optionally filtered by query and metadata.
+
+    Returns list of dicts with 'venue' and 'count' keys, sorted by count descending.
+    """
+    client, index = _client_and_index()
+
+    must: list[Dict[str, Any]] = []
+    if query:
+        must.append(_build_query_clause(query))
+
+    filters: list[Dict[str, Any]] = []
+    if year_from is not None or year_to is not None:
+        yr_from = year_from if year_from is not None else 0
+        yr_to = year_to if year_to is not None else 9999
+        filters.append({"range": {"year": {"gte": yr_from, "lte": yr_to}}})
+
+    if tag:
+        filters.append({"term": {"tags": tag}})
+
+    if folder:
+        filters.append({"term": {"folders": folder}})
+
+    body: Dict[str, Any] = {
+        "size": 0,  # Don't return documents, just aggregations
+        "query": {
+            "bool": {
+                "must": must if must else [{"match_all": {}}],
+                "filter": filters,
+            }
+        },
+        "aggs": {
+            "venues": {"terms": {"field": "venue", "size": size}}
+        },
+    }
+
+    resp = client.search(index=index, body=body)
+    buckets = resp["aggregations"]["venues"]["buckets"]
+
+    return [{"venue": b["key"], "count": b["doc_count"]} for b in buckets]

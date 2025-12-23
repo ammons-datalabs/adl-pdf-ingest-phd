@@ -11,9 +11,117 @@ SEARCH_FIELDS = [
 ]
 ```
 
-**Index stats:** 620 documents, 427 with abstracts, 578 with authors, 425 with DOIs
+**Index stats:** 619 documents, 427 with abstracts, 578 with authors, 425 with DOIs
 
 ---
+
+# Research Insights
+
+These examples show how the tool answered real research questions.
+
+## Insight 1: Defending Dataset Currency
+
+I received reviewer feedback that FSL (a multi-client trace cloud backup dataset)
+was outdated. A quick search with this new tool showed 13 papers from 2022-2024 still actively use it:
+
+```bash
+pdf-ingest search -q "FSL" --year-from 2022 --count
+```
+```
+13
+```
+
+```bash
+pdf-ingest grep -q "FSL" --year-from 2022 --size 3 --sort year-desc
+```
+```
+================================================================================
+  2024  Richardson - Enhancing Data Recovery in Deduplication Backup Systems
+        "FSL is a commonly used dataset"
+
+  2024  Wu et al. - A randomized encryption deduplication method
+        "workloads such as FSL and VM datasets"
+
+  2023  Wong et al. - Dataset similarity detection for global deduplication
+        "FSL Dataset: 117 filesets with ~36 million fingerprints"
+```
+
+**Takeaway:** FSL remains actively cited in top venues through 2024, countering the
+"outdated dataset" criticism with concrete evidence from my own corpus.
+
+---
+
+## Insight 2: Corpus Deduplication Discovery
+
+My Paperpile export contained ~1000 PDF files. After SHA-256 content deduplication:
+
+| Metric | Count |
+|--------|------:|
+| Source PDFs (Paperpile export) | ~1000 |
+| After SHA-256 dedup | 619 |
+| Exact duplicates removed | ~240 |
+
+These were exact byte-for-byte duplicates (not supplements or variants), likely artifacts
+of Paperpile's import process giving false negatives, leading to manual re-imports.
+
+---
+
+## Insight 3: Personal Taxonomy + Full-Text Search
+
+Years of careful tagging in Paperpile, now queryable alongside full-text:
+
+```bash
+# My taxonomy
+pdf-ingest search -q "" --tag "Chunking" --count           # 60
+pdf-ingest search -q "" --tag "Secure Dedup" --count       # 51
+pdf-ingest search -q "" --tag "Similarity/Resemblance"     # 31
+pdf-ingest search -q "" --tag "Fingerprint-Indexing"       # 39
+```
+
+Combine taxonomy with full-text to find cross-cutting patterns:
+
+```bash
+# Which Chunking papers discuss Rabin fingerprints?
+pdf-ingest grep -q "Rabin fingerprint" --tag "Chunking" --size 3
+```
+
+**Future exploration:** Compare my manual taxonomy to what an LLM would generate
+from the corpus text alone.
+
+---
+
+## Insight 4: Where to Publish
+
+When considering where to submit a paper on encrypted deduplication, I needed to know
+which venues publish the most work in this area:
+
+```bash
+pdf-ingest venues -q "encrypted deduplication" --size 10
+```
+```
+  21  ACM Trans. Storage
+  12  IEEE Trans. Parallel Distrib. Syst.
+  11  IEEE Access
+  11  IEEE Trans. Comput.
+   7  IEEE Transactions on Cloud Computing
+   6  Future Gener. Comput. Syst.
+   6  IEEE Trans. Dependable Secure Comput.
+   5  MSST
+   5  FAST
+   4  IEEE CLOUD
+```
+
+Can also filter by year to see recent trends:
+```bash
+pdf-ingest venues -q "encrypted deduplication" --year-from 2020
+```
+
+**Takeaway:** ACM Trans. Storage dominates for encrypted deduplication research,
+followed by IEEE TPDS and IEEE Access.
+
+---
+
+# Query Reference
 
 ## Query 1: "deduplication" (basic search)
 ```bash
